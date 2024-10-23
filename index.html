@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Swish Merchant Demo</title>
+	<link rel="stylesheet" type="text/css" href="/css/style.css" />
+</head>
+
+<style>
+* {
+	box-sizing: border-box;
+}
+
+.column {
+	float: left;
+	width: 50%;
+	padding: 10px;
+	height: 300px;
+}
+
+.row:after {
+	content: "";
+	display: table;
+	clear: both;
+}
+</style>
+
+<body>
+	<div class="row">
+		<div class="column">
+			<div id="main">
+				<h2>E-com</h2>
+				<form action="/action_page.php" id="inputForm">
+					Payer:<br>
+					<input type="text" name="Payer" id="Payer" value="">
+					<br>
+					Amount:<br>
+					<input type="text" name="Amount" id="Amount" value="">
+					<br>
+					Message:<br>
+					<input type="text" name="Message" id="Message" value="">
+					<br><br>
+				</form> 
+
+				<h3 id="status">Status: Ready for payment</h3>
+
+				<button onclick="startPaymentClick()">Start Payment</button>
+				<button onclick="paymentStatusClick('ecom')">Check Payment status</button>
+				<br>
+				<br>
+				<button onclick="startRefundClick('ecom', 'Amount', 'Message')">Start Refund</button>
+				<button onclick="refundStatusClick('ecom')">Check Refund Status</button>
+			</div>
+		</div>
+		<div class="column">
+			
+			<div id="main2">
+				<h2>Q-Com</h2>
+
+				<form action="/action_page.php" id="inputForm">
+					Amount:<br>
+					<input type="text" name="Amount" id="QAmount" value="">
+					<br>
+					Message:<br>
+					<input type="text" name="Message" id="QMessage" value="">
+					<br><br>
+				</form> 
+
+				<h3 id="Qstatus">Status: Ready for payment</h3>
+
+				<button onclick="startQRPaymentClick()">Start Payment</button>
+				<button onclick="paymentStatusClick('qcom')">Check Payment status</button>
+				<br>
+				<br>
+				<button onclick="startRefundClick('qcom', 'QAmount', 'QMessage')">Start Refund</button>
+				<button id="RefundStatusButton" onclick="refundStatusClick('qcom')">Check Refund Status</button>
+				<br>
+				<img id="QR" src="" alt="QR Code" style="width:400px;height:400px;">
+			</div>
+		</div>
+	</div>
+</div>
+
+</body>
+
+<script>
+
+	var baseURL = "http://" + window.location.host + "/"
+	var commerceType = "ecom"
+
+	var identifier = ""
+	var originalPaymentReference = ""
+	var refundIdentifier = ""
+
+	function clear() {
+		identifier = ""
+		originalPaymentReference = ""
+		refundIdentifier = ""
+	}
+
+	function setCommerceType(type) {
+		if (type != commerceType) {
+			clear()
+			commerceType = type
+		}
+	}
+
+	function updateStatus(status) {
+		if (commerceType == "ecom") {
+			document.getElementById("status").innerHTML = "Status:  " + status
+		} else {
+			document.getElementById("Qstatus").innerHTML = "Status:  " + status
+		}
+	}
+
+	function startPaymentClick() {
+		setCommerceType("ecom")
+		if (document.getElementById("Payer").value.length <= 0) {
+			updateStatus("Payer is required")
+			return
+		} else if (!document.getElementById("Payer").value.startsWith("46")) {
+			updateStatus("Payer is should start with 46")
+			return
+		}
+		const payer = document.getElementById("Payer").value
+
+		if (document.getElementById("Amount").value.length <= 0) {
+			updateStatus("Amount is required")
+			return
+		}
+		const amount = document.getElementById("Amount").value
+		const message = document.getElementById("Message").value
+
+		postPayment(payer, amount, message)	
+		updateStatus("Request sent")
+	}
+
+	function paymentStatusClick(commerceType) {
+		setCommerceType(commerceType)
+		const id = identifier
+		if (!id || id.length <= 0) {
+			updateStatus("No payment Id")
+			return
+		}
+		getPaymentStatus(id)
+	}
+
+	function startRefundClick(commerceType, AmountId, MessageId) {
+		setCommerceType(commerceType)
+		const amount = document.getElementById(AmountId).value
+		const message = document.getElementById(MessageId).value
+		const payRef = originalPaymentReference
+
+		if (!payRef || payRef.length <= 0) {
+			updateStatus("No payment reference, update status")
+			return
+		}
+
+		postRefund(payRef, amount, message)
+	}
+
+	function refundStatusClick(commerceType) {
+		setCommerceType(commerceType)
+		const id = refundIdentifier       
+		if (!id || id.length <= 0) {
+			updateStatus("No refund id")
+			return
+		}
+		getRefundStatus(id)
+	}
+
+	function startQRPaymentClick() {
+		setCommerceType("qcom")
+		if (document.getElementById("QAmount").value.length <= 0) {
+			updateStatus("Amount is required")
+			return
+		}
+		const amount = document.getElementById("QAmount").value
+		const message = document.getElementById("QMessage").value
+
+		postQRPayment(amount, message)	
+		updateStatus("Request sent")
+	}
+
+	// ------------------------------------------
+
+	function postPayment(payer, amount, message) {
+
+		const url = baseURL + "paymentrequests"
+		fetch(url, {  
+			method: 'POST',  
+			headers: {
+				'Content-Type': 'application/json'
+			},  
+			body: JSON.stringify({
+				payerAlias: payer,
+				amount: amount,
+				message: message
+			})
+		})
+		.then(function(response) {
+			if (response.status != 201) {
+				updateStatus("Request failure: " + response.statusText)
+				return
+			}
+			return response.json();
+		})
+		.then(function(json) {
+			if (json) {
+				identifier = json["id"];
+				updateStatus("Payment request created with identifier " + identifier + ", open app.")
+			}
+
+		})
+		.catch(function (error) {  
+			console.log("Request failure: ", error);  
+		});
+	}
+
+	function postQRPayment(amount, message) {
+
+		const url = baseURL + "paymentrequests"
+		fetch(url, {  
+			method: 'POST',  
+			headers: {
+				'Content-Type': 'application/json'
+			},  
+			body: JSON.stringify({
+				amount: amount,
+				message: message
+			})
+		})
+		.then(function(response) {
+			if (response.status != 201) {
+				updateStatus("Request failure: " + response.statusText)
+				return
+			}
+			return response.json();
+		})
+		.then(function(json) {
+			if (json) {
+
+				identifier = json["id"];
+				const token = json["token"];
+				const url = baseURL + "qr/" + token
+				fetch(url, {  
+					method: 'GET',  
+					headers: {
+						'Content-Type': 'application/json'
+					}
+				})
+				.then(function(response) {
+					return response.blob();
+				})
+				.then(function(blob) {
+					var objectURL = URL.createObjectURL(blob);
+					document.getElementById("QR").src = objectURL;
+					return response
+				})
+				.catch(function (error) {  
+					console.log("Request failure: ", error);  
+				});
+			}
+
+		})
+		.catch(function (error) {  
+			console.log("Request failure: ", error);  
+		});
+	}
+
+	function getPaymentStatus(id) {
+
+		const url = baseURL + "paymentrequests/" + id
+
+		fetch(url, {  
+			method: 'GET',  
+			headers: {
+				'Content-Type': 'application/json'
+			}
+		})
+		.then(function(response) {
+			return response.json();
+		})
+		.then(function(json) {
+			if (json.status == "PAID") {
+				originalPaymentReference = json["paymentReference"];
+			}
+			updateStatus("Payment(identifier: " + identifier + ", paymentReference: "+ originalPaymentReference + ") " + json.status)
+		})
+		.catch(function (error) {  
+			console.log("Request failure: ", error);  
+		});
+	}
+
+	function postRefund(payRef, amount, message) {
+
+		const url = baseURL + "refunds"
+		fetch(url, {  
+			method: 'POST',  
+			headers: {
+				'Content-Type': 'application/json'
+			},  
+			body: JSON.stringify({
+				originalPaymentReference: payRef,
+				amount: amount,
+				message: message
+			})
+		})
+		.then(function(response) {
+			return response.json();
+		})
+		.then(function(json) {
+			refundIdentifier = json["id"];
+			originalPaymentReference = json["originalPaymentReference"];
+			updateStatus("Refund started for paymentReference " + originalPaymentReference)
+		})
+		.catch(function (error) {
+			updateStatus("Refund error")
+			console.log("Request failure: ", error);  
+		});
+	}
+
+	function getRefundStatus(id) {
+
+		const url = baseURL + "refunds/" + id
+
+		fetch(url, {  
+			method: 'GET',  
+			headers: {
+				'Content-Type': 'application/json'
+			}
+		})
+		.then(function(response) {
+			return response.json();
+		})
+		.then(function(json) {
+			updateStatus("Refund " + json.status + " for payment with reference: " + json.originalPaymentReference)
+		})
+		.catch(function (error) {  
+			updateStatus("Get Refund Error")
+			console.log("Request failure: ", error);  
+		});
+	}
+
+</script>
+
+</html>
